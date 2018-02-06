@@ -18,11 +18,15 @@
 // No warranties are given. The license may not give you all of the permissions necessary for your intended use. For example, other rights such as publicity, privacy, or moral rights may limit how you use the material.
 //
 // github: https://github.com/gusgonnet/infraredFireplace
-// hackster: https://www.hackster.io/gusgonnet
+// hackster: https://www.hackster.io/gusgonnet/control-an-ir-appliance-from-the-internet-525a7c
 //
 // Free for personal use.
 //
 // https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+#include "IRremote.h"
+#include "elapsedMillis.h"
+
 
 /*******************************************************************************
  Here you decide if you want to use Blynk
@@ -30,16 +34,14 @@
  NEVER EVER ENABLE BLYNK AND FORGET TO ENTER A VALID BLYNK_AUTH_TOKEN
  NEVER EVER!!! the loop() can block and you'll wonder forever what happened
 *******************************************************************************/
-// #define USE_BLYNK
+#define USE_BLYNK
 
-// #ifdef USE_BLYNK
+#ifdef USE_BLYNK
 #include <blynk.h>
-// #endif
+#endif
 
-#include "IRremote.h"
-#include "elapsedMillis.h"
 
-#define APP_NAME "infraredLeds"
+#define APP_NAME "infraredFireplace"
 String VERSION = "Version 0.01";
 
 /*******************************************************************************
@@ -47,7 +49,7 @@ String VERSION = "Version 0.01";
        * Initial version
 *******************************************************************************/
 
-// #ifdef USE_BLYNK
+#ifdef USE_BLYNK
 #define BLYNK_AUTH_TOKEN "12345ABCD1234598437295873ABCD"
 // #include <blynkAuthToken.h>
 char auth[] = BLYNK_AUTH_TOKEN;
@@ -56,15 +58,18 @@ char auth[] = BLYNK_AUTH_TOKEN;
 #define BLYNK_ORANGE V51
 #define BLYNK_BLUE V52
 #define BLYNK_BLOWER V53
+#define BLYNK_TIMER V54
+#define BLYNK_TEMPERATURE V55
 
-// #endif
-
-// defaults to max intensity
-int currentIntensity = 8;
+#endif
 
 //enable the user code (our program below) to run in parallel with Particle's cloud connectivity code
 // source: https://docs.particle.io/reference/firmware/photon/#system-thread
 SYSTEM_THREAD(ENABLED);
+
+// Sample loop every now and then - 200 milliseconds means 5 times per second
+#define QUICK_LOOP_INTERVAL 200
+elapsedMillis quickLoopTimer;
 
 #define IR_COMMAND_LENGTH 67
 #define IR_CARRIER_FREQUENCY 38
@@ -196,11 +201,11 @@ IRsend irsend;
  *******************************************************************************/
 void setup()
 {
-  // publish startup message with firmware version
-  Particle.publish(APP_NAME, VERSION);
 
   Serial.begin(9600);
   Serial.println("Hi there!");
+
+  pinMode(D7, OUTPUT);
 
   irrecv.enableIRIn(); // Start the receiver
 
@@ -208,16 +213,28 @@ void setup()
   // https://docs.particle.io/reference/firmware/photon/#particle-function-
   // Up to 15 cloud functions may be registered and each function name is limited to a maximum of 12 characters.
 
-  Particle.function("orange", orange);
-  Particle.function("blue", blue);
+  Particle.function("fireOnOff", napoleonOnOff);
+  Particle.function("fireOrange", napoleonOrange);
+  Particle.function("fireBlue", napoleonBlue);
+  Particle.function("fireBlower", napoleonBlower);
+  Particle.function("fireTimer", napoleonTimer);
+  Particle.function("fireTemp", napoleonTemperature);
 
   // send a samsung volume up/down code (good for testing your circuit)
   Particle.function("samsungVolUp", sendSamsungVolumeUp);
   Particle.function("samsungVolDn", sendSamsungVolumeDown);
 
-  // #ifdef USE_BLYNK
+  #ifdef USE_BLYNK
   Blynk.begin(auth);
-  // #endif
+  #endif
+
+  // publish startup message with firmware version
+  // this delay is the compensate for the new publish particle is doing these days
+  // this one:
+  // "service\":{\"device\":{\"status\":\"unsupported\"},\"coap\":{\"round_trip\":96},\"cloud\":{\"uptime\":1,
+  delay(5000);
+  Particle.publish(APP_NAME, VERSION, PRIVATE);
+  
 }
 
 /*******************************************************************************
@@ -229,30 +246,80 @@ void loop()
 
   // decodeIRcodes();
 
-  // #ifdef USE_BLYNK
+  quickLoop();
+}
+
+/*******************************************************************************
+ * Function Name  : quickLoop
+ * Description    : this function runs every 100 milliseconds (10 times a second)
+                     to save power
+ *******************************************************************************/
+void quickLoop()
+{
+
+  // is time up? no, then come back later
+  if (quickLoopTimer < QUICK_LOOP_INTERVAL)
+  {
+    return;
+  }
+
+  // time is up, reset timer
+  quickLoopTimer = 0;
+
+  #ifdef USE_BLYNK
   Blynk.run();
-  // #endif
+  #endif
 }
 
 /*******************************************************************************
 ********************************************************************************
 ********************************************************************************
- INFRARED FUNCTIONS
+ NAPOLEON FIREPLACE INFRARED FUNCTIONS
 ********************************************************************************
 ********************************************************************************
 *******************************************************************************/
-
-int orange(String command)
+int napoleonOrange(String command)
 {
   sendIrCommand(napoleon_orange);
-  Particle.publish(APP_NAME, "Orange triggered");
+  Particle.publish(APP_NAME, "Napoleon Orange command sent");
   return 0;
 }
 
-int blue(String command)
+int napoleonBlue(String command)
 {
   sendIrCommand(napoleon_blue);
-  Particle.publish(APP_NAME, "Blue triggered");
+  Particle.publish(APP_NAME, "Napoleon Blue command sent");
+  return 0;
+}
+
+int napoleonBlower(String command)
+{
+  sendIrCommand(napoleon_blower);
+  Particle.publish(APP_NAME, "Napoleon Blower command sent");
+  return 0;
+}
+
+int napoleonOnOff(String command)
+{
+  digitalWrite(D7, HIGH);
+  delay(500);
+  digitalWrite(D7, LOW);
+  sendIrCommand(napoleon_onOff);
+  Particle.publish(APP_NAME, "Napoleon OnOff command sent");
+  return 0;
+}
+
+int napoleonTimer(String command)
+{
+  sendIrCommand(napoleon_timer);
+  Particle.publish(APP_NAME, "Napoleon Timer command sent");
+  return 0;
+}
+
+int napoleonTemperature(String command)
+{
+  sendIrCommand(napoleon_temperature);
+  Particle.publish(APP_NAME, "Napoleon Temperature command sent");
   return 0;
 }
 
@@ -424,45 +491,58 @@ unsigned long decodeHash(decode_results *results)
   return hash;
 }
 
-/*******************************************************************************
- * Function Name  : double2string
- * Description    : return the string representation of the double number
-                     passed as parameter with 2 decimals
- * Return         : the string
- *******************************************************************************/
-String double2string(double doubleNumber)
-{
-  String stringNumber = String(doubleNumber);
-
-  //return only 2 decimals
-  // Example: show 19.00 instead of 19.000000
-  stringNumber = stringNumber.substring(0, stringNumber.length() - 4);
-
-  return stringNumber;
-}
-
-/*******************************************************************************
- * Function Name  : int2string
- * Description    : return the string representation of the int number
-                     passed as parameter with 2 decimals
- * Return         : the string
- *******************************************************************************/
-String int2string(int number)
-{
-  String stringNumber = String(number);
-
-  //return only 2 decimals
-  // Example: show 19.00 instead of 19.000000
-  stringNumber = stringNumber.substring(0, stringNumber.length() - 4);
-
-  return stringNumber;
-}
-
 /*******************************************************************************/
 /*******************************************************************************/
 /*******************           BLYNK FUNCTIONS          *************************/
 /*******************************************************************************/
 /*******************************************************************************/
-// #ifdef USE_BLYNK
+#ifdef USE_BLYNK
+BLYNK_WRITE(BLYNK_FIREPLACE_ON_OFF)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonOnOff("");
+  }
+}
 
-// #endif
+BLYNK_WRITE(BLYNK_ORANGE)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonOrange("");
+  }
+}
+
+BLYNK_WRITE(BLYNK_BLUE)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonBlue("");
+  }
+}
+
+BLYNK_WRITE(BLYNK_BLOWER)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonBlower("");
+  }
+}
+
+BLYNK_WRITE(BLYNK_TIMER)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonTimer("");
+  }
+}
+
+BLYNK_WRITE(BLYNK_TEMPERATURE)
+{
+  if (param.asInt() == 1)
+  {
+    napoleonTemperature("");
+  }
+}
+
+#endif
